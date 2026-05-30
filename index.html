@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Cricket Finder — concept test</title>
+<style>
+  :root { --bg:#0d1117; --panel:#161b22; --line:#30363d; --txt:#e6edf3; --dim:#8b949e;
+          --warm:#3fb950; --cold:#58a6ff; --steady:#d29922; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:14px 16px; border-bottom:1px solid var(--line); }
+  h1 { font-size:17px; margin:0; }
+  header p { margin:4px 0 0; color:var(--dim); font-size:13px; }
+  main { padding:14px 16px 40px; max-width:760px; margin:0 auto; }
+  button { font:inherit; font-weight:600; padding:12px 18px; border-radius:9px; border:0; cursor:pointer; }
+  #toggle { background:var(--warm); color:#06210f; width:100%; font-size:17px; }
+  #toggle.on { background:#da3633; color:#fff; }
+  .controls { display:flex; flex-wrap:wrap; gap:14px; margin:14px 0; }
+  .ctl { flex:1 1 220px; background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:10px 12px; }
+  .ctl label { display:flex; justify-content:space-between; color:var(--dim); font-size:13px; }
+  .ctl label b { color:var(--txt); }
+  input[type=range] { width:100%; margin:8px 0 0; accent-color:var(--cold); }
+  canvas { width:100%; height:340px; display:block; background:#000; border:1px solid var(--line); border-radius:9px; }
+  .meters { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:14px; }
+  .meter { background:var(--panel); border:1px solid var(--line); border-radius:9px; padding:12px 14px; }
+  .meter .k { color:var(--dim); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .meter .v { font-size:28px; font-weight:700; margin-top:2px; font-variant-numeric:tabular-nums; }
+  .meter .v small { font-size:14px; color:var(--dim); font-weight:500; }
+  #trend .v { transition:color .15s; }
+  .bar { height:10px; background:#0d1117; border-radius:6px; margin-top:8px; overflow:hidden; }
+  .bar > i { display:block; height:100%; background:linear-gradient(90deg,var(--cold),var(--warm)); width:0; }
+  #balwrap { position:relative; height:10px; background:#0d1117; border-radius:6px; margin-top:8px; }
+  #balwrap::before { content:""; position:absolute; left:50%; top:-2px; width:1px; height:14px; background:var(--dim); }
+  #bal { position:absolute; top:0; height:100%; width:6px; border-radius:3px; background:var(--steady); left:calc(50% - 3px); transition:left .1s; }
+  .diag { color:var(--dim); font-size:12px; margin-top:14px; font-variant-numeric:tabular-nums; }
+  .note { background:var(--panel); border:1px solid var(--line); border-left:3px solid var(--warm); border-radius:8px; padding:12px 14px; margin-top:18px; font-size:14px; }
+  .note b { color:var(--warm); }
+  code { background:#010409; padding:1px 5px; border-radius:4px; font-size:13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🦗 Cricket Finder — concept test</h1>
+  <p>Tests the three risky assumptions: can a browser mic hear insect-band sound, is the loudness gradient steep enough for "warmer/colder", and does stereo respond when you turn the phone?</p>
+</header>
+
+<main>
+  <button id="toggle">Start microphone</button>
+
+  <div class="controls">
+    <div class="ctl">
+      <label>Listening band — low <b><span id="loVal">3.0</span> kHz</b></label>
+      <input id="lo" type="range" min="0.2" max="18" step="0.1" value="3" />
+    </div>
+    <div class="ctl">
+      <label>Listening band — high <b><span id="hiVal">11.0</span> kHz</b></label>
+      <input id="hi" type="range" min="0.2" max="18" step="0.1" value="11" />
+    </div>
+  </div>
+
+  <canvas id="spec"></canvas>
+
+  <div class="meters">
+    <div class="meter">
+      <div class="k">Band level</div>
+      <div class="v"><span id="level">—</span> <small>dB</small></div>
+      <div class="bar"><i id="levelBar"></i></div>
+    </div>
+    <div class="meter" id="trend">
+      <div class="k">Warmer / colder</div>
+      <div class="v" id="trendVal">—</div>
+    </div>
+    <div class="meter">
+      <div class="k">Peak freq in band</div>
+      <div class="v"><span id="peak">—</span> <small>Hz</small></div>
+    </div>
+    <div class="meter">
+      <div class="k">Stereo balance (L ↔ R)</div>
+      <div class="v" id="balVal" style="font-size:18px">—</div>
+      <div id="balwrap"><div id="bal"></div></div>
+    </div>
+  </div>
+
+  <div class="diag" id="diag">Idle.</div>
+
+  <div class="note">
+    <b>How to test:</b> Play a katydid/cricket recording from
+    <code>xeno-canto.org</code> on a speaker. Walk toward and away from it — watch the
+    <b>Band level</b> and <b>Warmer/colder</b> readouts. Then slowly rotate the phone
+    (mic side toward, then away from the speaker) and watch <b>Stereo balance</b>.
+    If "warmer/colder" tracks your movement and the peak frequency lands inside your
+    band, the concept holds.
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const toggle = $('toggle'), canvas = $('spec'), ctx2d = canvas.getContext('2d');
+
+let audioCtx, stream, raf;
+let aMain, aL, aR;            // analyser nodes
+let floatMain, byteMain, floatL, floatR;
+let running = false;
+
+// "warmer/colder" state
+let emaDb = -120;             // smoothed band level
+const slopeBuf = [];          // {t, v} ring buffer for ~0.8s slope
+
+// --- UI: band sliders -------------------------------------------------------
+const lo = $('lo'), hi = $('hi');
+function syncBand() {
+  if (+lo.value >= +hi.value) { // keep lo < hi
+    if (document.activeElement === lo) hi.value = (+lo.value + 0.2).toFixed(1);
+    else lo.value = (+hi.value - 0.2).toFixed(1);
+  }
+  $('loVal').textContent = (+lo.value).toFixed(1);
+  $('hiVal').textContent = (+hi.value).toFixed(1);
+}
+lo.oninput = hi.oninput = syncBand; syncBand();
+
+// --- canvas sizing ----------------------------------------------------------
+const SPEC_LEFT = 44;          // left gutter for the frequency axis
+const DISPLAY_MAX_HZ = 16000;  // top of the spectrogram
+function fitCanvas() {
+  canvas.width = canvas.clientWidth;
+  canvas.height = 340;
+  ctx2d.fillStyle = '#000';
+  ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+}
+addEventListener('resize', fitCanvas);
+
+// --- start / stop -----------------------------------------------------------
+toggle.onclick = () => running ? stop() : start();
+
+async function start() {
+  try {
+    // The four constraints below matter: leaving AGC / noise suppression on
+    // would crush the loudness differences the "find-it" feature relies on.
+    stream = await navigator.mediaDevices.getUserMedia({ audio: {
+      echoCancellation: false, noiseSuppression: false,
+      autoGainControl: false, channelCount: 2
+    }});
+  } catch (e) {
+    $('diag').textContent = 'Microphone blocked: ' + e.message +
+      ' — needs https:// or http://localhost.';
+    return;
+  }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  await audioCtx.resume();
+  const src = audioCtx.createMediaStreamSource(stream);
+
+  aMain = audioCtx.createAnalyser();
+  aMain.fftSize = 4096; aMain.smoothingTimeConstant = 0;
+  src.connect(aMain);
+
+  // split into L / R to test directional response
+  const splitter = audioCtx.createChannelSplitter(2);
+  src.connect(splitter);
+  aL = audioCtx.createAnalyser(); aR = audioCtx.createAnalyser();
+  aL.fftSize = aR.fftSize = 2048;
+  aL.smoothingTimeConstant = aR.smoothingTimeConstant = 0.3;
+  splitter.connect(aL, 0); splitter.connect(aR, 1);
+
+  floatMain = new Float32Array(aMain.frequencyBinCount);
+  byteMain  = new Uint8Array(aMain.frequencyBinCount);
+  floatL = new Float32Array(aL.frequencyBinCount);
+  floatR = new Float32Array(aR.frequencyBinCount);
+
+  const s = stream.getAudioTracks()[0].getSettings();
+  $('diag').textContent =
+    `sampleRate ${audioCtx.sampleRate} Hz · fft ${aMain.fftSize} ` +
+    `(${(audioCtx.sampleRate/aMain.fftSize).toFixed(1)} Hz/bin) · ` +
+    `channels reported: ${s.channelCount ?? 'unknown'}`;
+
+  fitCanvas();
+  emaDb = -120; slopeBuf.length = 0;
+  running = true;
+  toggle.textContent = 'Stop'; toggle.classList.add('on');
+  loop();
+}
+
+function stop() {
+  running = false;
+  cancelAnimationFrame(raf);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  toggle.textContent = 'Start microphone'; toggle.classList.remove('on');
+  $('diag').textContent = 'Stopped.';
+}
+
+// --- band energy ------------------------------------------------------------
+// Sum power across FFT bins inside [fMin,fMax]; return total dB + peak freq.
+function bandStats(floatDb, fMin, fMax) {
+  const binHz = audioCtx.sampleRate / (floatDb.length * 2);
+  const i0 = Math.max(1, Math.floor(fMin / binHz));
+  const i1 = Math.min(floatDb.length - 1, Math.ceil(fMax / binHz));
+  let power = 0, peakDb = -Infinity, peakBin = i0;
+  for (let i = i0; i <= i1; i++) {
+    const db = floatDb[i];
+    if (!isFinite(db)) continue;
+    power += Math.pow(10, db / 10);
+    if (db > peakDb) { peakDb = db; peakBin = i; }
+  }
+  return { db: power > 0 ? 10 * Math.log10(power) : -120, peakHz: Math.round(peakBin * binHz) };
+}
+
+// --- main loop --------------------------------------------------------------
+function loop() {
+  raf = requestAnimationFrame(loop);
+  const fMin = +lo.value * 1000, fMax = +hi.value * 1000;
+
+  aMain.getByteFrequencyData(byteMain);   // for the picture
+  aMain.getFloatFrequencyData(floatMain); // for the metering
+  drawColumn(fMin, fMax);
+
+  const main = bandStats(floatMain, fMin, fMax);
+
+  // smooth + compute slope over ~0.8 s -> warmer / colder
+  emaDb = emaDb * 0.7 + main.db * 0.3;
+  const now = performance.now();
+  slopeBuf.push({ t: now, v: emaDb });
+  while (slopeBuf.length && now - slopeBuf[0].t > 1500) slopeBuf.shift();
+  const past = slopeBuf.find(p => now - p.t >= 800) || slopeBuf[0];
+  const slope = emaDb - past.v;
+
+  $('level').textContent = isFinite(main.db) ? main.db.toFixed(1) : '—';
+  $('peak').textContent = main.peakHz;
+  $('levelBar').style.width = Math.max(0, Math.min(100, (main.db + 90) / 70 * 100)) + '%';
+
+  const t = $('trendVal');
+  if (slope > 0.6)      { t.textContent = 'WARMER ↑'; t.style.color = 'var(--warm)'; }
+  else if (slope < -0.6){ t.textContent = 'COLDER ↓'; t.style.color = 'var(--cold)'; }
+  else                  { t.textContent = 'steady →'; t.style.color = 'var(--steady)'; }
+
+  // stereo balance
+  aL.getFloatFrequencyData(floatL); aR.getFloatFrequencyData(floatR);
+  const L = bandStats(floatL, fMin, fMax).db, R = bandStats(floatR, fMin, fMax).db;
+  const bal = L - R; // +ve = louder on left
+  $('balVal').textContent = (bal >= 0 ? 'L +' : 'R +') + Math.abs(bal).toFixed(1) + ' dB';
+  $('bal').style.left = `calc(${50 - Math.max(-50, Math.min(50, bal * 4))}% - 3px)`;
+}
+
+// scroll the spectrogram left 1px and paint the newest column on the right
+function drawColumn(fMin, fMax) {
+  const W = canvas.width, H = canvas.height, x = W - 1;
+  ctx2d.drawImage(canvas, SPEC_LEFT + 1, 0, W - SPEC_LEFT - 1, H, SPEC_LEFT, 0, W - SPEC_LEFT - 1, H);
+  const binHz = audioCtx.sampleRate / aMain.fftSize;
+  for (let y = 0; y < H; y++) {
+    const freq = (1 - y / H) * DISPLAY_MAX_HZ;
+    const v = byteMain[Math.round(freq / binHz)] || 0;
+    // dark-blue (quiet) -> red (loud), brightness rising with level
+    ctx2d.fillStyle = `hsl(${240 - 240 * v / 255}, 100%, ${8 + 42 * v / 255}%)`;
+    ctx2d.fillRect(x, y, 1, 1);
+  }
+  // redraw axis gutter + band markers each frame
+  ctx2d.fillStyle = '#000'; ctx2d.fillRect(0, 0, SPEC_LEFT, H);
+  ctx2d.fillStyle = '#8b949e'; ctx2d.font = '10px system-ui'; ctx2d.textAlign = 'right';
+  for (let f = 2000; f <= DISPLAY_MAX_HZ; f += 2000) {
+    const y = (1 - f / DISPLAY_MAX_HZ) * H;
+    ctx2d.fillText((f / 1000) + 'k', SPEC_LEFT - 4, y + 3);
+  }
+  ctx2d.strokeStyle = 'rgba(255,255,255,.45)'; ctx2d.lineWidth = 1;
+  for (const f of [fMin, fMax]) {
+    const y = (1 - f / DISPLAY_MAX_HZ) * H;
+    ctx2d.beginPath(); ctx2d.moveTo(SPEC_LEFT, y); ctx2d.lineTo(W, y); ctx2d.stroke();
+  }
+}
+
+fitCanvas();
+</script>
+</body>
+</html>
